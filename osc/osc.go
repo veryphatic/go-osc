@@ -32,6 +32,7 @@ type Packet interface {
 type Message struct {
 	Address   string
 	Arguments []interface{}
+	Sender    net.Addr
 }
 
 // Verify that Messages implements the Packet interface.
@@ -605,12 +606,13 @@ func (s *Server) readFromConnection(c net.PacketConn) (Packet, error) {
 	}
 
 	data := make([]byte, 65535)
-	n, _, err := c.ReadFrom(data)
+	n, addr, err := c.ReadFrom(data)
 	if err != nil {
 		return nil, err
 	}
 
-	p, err := readPacket(bufio.NewReader(bytes.NewBuffer(data[0:n])))
+	p, err := readPacketWithSender(bufio.NewReader(bytes.NewBuffer(data[0:n])), addr)
+
 	if err != nil {
 		return nil, err
 	}
@@ -622,6 +624,24 @@ func ParsePacket(msg string) (Packet, error) {
 	p, err := readPacket(bufio.NewReader(bytes.NewBufferString(msg)))
 	if err != nil {
 		return nil, err
+	}
+	return p, nil
+}
+
+// wrap sender
+func readPacketWithSender(reader *bufio.Reader, sender net.Addr) (Packet, error) {
+	p, err := readPacket(reader)
+	if err != nil {
+		return nil, err
+	}
+	if msg, ok := p.(*Message); ok {
+		msg.Sender = sender
+	}
+	if bundle, ok := p.(*Bundle); ok {
+		// recursively assign sender to each message (if needed)
+		for _, m := range bundle.Messages {
+			m.Sender = sender
+		}
 	}
 	return p, nil
 }
